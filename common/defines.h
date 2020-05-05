@@ -93,6 +93,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 // Added definition to support flexrings.
 #define G 50
 
+// In kernel3.cu this determines how many runs
+// to do per block. Set too large and it will overflow
+// shared memory. 
+#define RUNS_PER_BLOCK 1
+#define THREADS_PER_ENTITY NUM_OF_THREADS_PER_BLOCK/RUNS_PER_BLOCK
 
 
 // TODO: convert this into a program arg

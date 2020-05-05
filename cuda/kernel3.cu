@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 */
 
-
+#include "defines.h"
 
 
 __global__ void
@@ -40,250 +40,255 @@ gpu_perform_LS_kernel(
 //it is always tested according to the ls probability, and if it not to be
 //subjected to local search, the entity with ID num_of_lsentities is selected instead of the first one (with ID 0).
 {
-	// Some OpenCL compilers don't allow declaring 
-	// local variables within non-kernel functions.
-	// These local variables must be declared in a kernel, 
-	// and then passed to non-kernel functions.
-	__shared__ float genotype_candidate[ACTUAL_GENOTYPE_LENGTH];
-	__shared__ float genotype_deviate  [ACTUAL_GENOTYPE_LENGTH];
-	__shared__ float genotype_bias     [ACTUAL_GENOTYPE_LENGTH];
-    __shared__ float rho;
-	__shared__ int   cons_succ;
-	__shared__ int   cons_fail;
-	__shared__ int   iteration_cnt;
-	__shared__ int   evaluation_cnt;
-	__shared__ float3 calc_coords[MAX_NUM_OF_ATOMS];
-	__shared__ float offspring_genotype[ACTUAL_GENOTYPE_LENGTH];
-	__shared__ float offspring_energy;
-    __shared__ float sFloatAccumulator;
-	__shared__ int entity_id;
-	float candidate_energy;
-    int run_id;
+  // Some OpenCL compilers don't allow declaring 
+  // local variables within non-kernel functions.
+  // These local variables must be declared in a kernel, 
+  // and then passed to non-kernel functions.
+  __shared__ float genotype_candidate[RUNS_PER_BLOCK][ACTUAL_GENOTYPE_LENGTH];
+  __shared__ float genotype_deviate  [RUNS_PER_BLOCK][ACTUAL_GENOTYPE_LENGTH];
+  __shared__ float genotype_bias     [RUNS_PER_BLOCK][ACTUAL_GENOTYPE_LENGTH];
+  __shared__ float rho[RUNS_PER_BLOCK];
+  __shared__ int   cons_succ[RUNS_PER_BLOCK];
+  __shared__ int   cons_fail[RUNS_PER_BLOCK];
+  __shared__ int   iteration_cnt[RUNS_PER_BLOCK];
+  __shared__ int   evaluation_cnt[RUNS_PER_BLOCK];
+  __shared__ float3 calc_coords[RUNS_PER_BLOCK][MAX_NUM_OF_ATOMS];
+  __shared__ float offspring_genotype[RUNS_PER_BLOCK][ACTUAL_GENOTYPE_LENGTH];
+  __shared__ float offspring_energy[RUNS_PER_BLOCK];
+  __shared__ float sFloatAccumulator[RUNS_PER_BLOCK];
+  __shared__ int entity_id[RUNS_PER_BLOCK];
+  float candidate_energy;
+  int run_id;
+  // Integer division to ensure we always get from 0 to RUNS_PER_BLOCK - 1
+  int group_id = threadIdx.x / (blockDim.x/RUNS_PER_BLOCK);
+  int new_threadidx_x = threadIdx.x % (blockDim.x/RUNS_PER_BLOCK);
 
-	// Determining run ID and entity ID
-	// Initializing offspring genotype
-    run_id = blockIdx.x / cData.dockpars.num_of_lsentities;
-	if (threadIdx.x == 0)
-	{
-        entity_id = blockIdx.x % cData.dockpars.num_of_lsentities;
 
-		// Since entity 0 is the best one due to elitism,
-		// it should be subjected to random selection
-		if (entity_id == 0) {
-			// If entity 0 is not selected according to LS-rate,
-			// choosing an other entity
-			if (100.0f*gpu_randf(cData.pMem_prng_states) > cData.dockpars.lsearch_rate) {
-				entity_id = cData.dockpars.num_of_lsentities;					
-			}
-		}
+  // Determining run ID and entity ID
+  // Initializing offspring genotype
+  run_id = (RUNS_PER_BLOCK*blockIdx.x) / cData.dockpars.num_of_lsentities;
+  if (new_threadidx_x == 0)
+  {
+    entity_id[group_id] = (RUNS_PER_BLOCK*blockIdx.x + group_id) % cData.dockpars.num_of_lsentities;
 
-		offspring_energy = pMem_energies_next[run_id*cData.dockpars.pop_size+entity_id];
-		rho = 1.0f;
-		cons_succ = 0;
-		cons_fail = 0;
-		iteration_cnt = 0;
-		evaluation_cnt = 0;        
-	}
+    // Since entity 0 is the best one due to elitism,
+    // it should be subjected to random selection
+    if (entity_id[group_id] == 0) {
+      // If entity 0 is not selected according to LS-rate,
+      // choosing an other entity
+      if (100.0f*gpu_randf(cData.pMem_prng_states) > cData.dockpars.lsearch_rate) {
+        entity_id[group_id] = cData.dockpars.num_of_lsentities;					
+      }
+    }
+
+    offspring_energy[group_id] = pMem_energies_next[run_id*cData.dockpars.pop_size+entity_id[group_id]];
+    rho[group_id] = 1.0f;
+    cons_succ[group_id] = 0;
+    cons_fail[group_id] = 0;
+    iteration_cnt[group_id] = 0;
+    evaluation_cnt[group_id] = 0;        
+  }
+  __threadfence();
+  __syncthreads();
+
+
+  size_t offset = (run_id * cData.dockpars.pop_size + entity_id[group_id]) * GENOTYPE_LENGTH_IN_GLOBMEM;
+  for (uint32_t gene_counter = new_threadidx_x;
+      gene_counter < cData.dockpars.num_of_genes;
+      gene_counter+= (blockDim.x/RUNS_PER_BLOCK)) {
+    offspring_genotype[group_id][gene_counter] = pMem_conformations_next[offset + gene_counter];
+    genotype_bias[group_id][gene_counter] = 0.0f;
+  }
+  __threadfence();
+  __syncthreads();
+
+
+  while ((iteration_cnt[group_id] < cData.dockpars.max_num_of_iters) && (rho[group_id] > cData.dockpars.rho_lower_bound))
+  {
+    // New random deviate
+    for (uint32_t gene_counter = new_threadidx_x;
+        gene_counter < cData.dockpars.num_of_genes;
+        gene_counter+= (blockDim.x/RUNS_PER_BLOCK))
+    {
+      genotype_deviate[group_id][gene_counter] = rho[group_id]*(2*gpu_randf(cData.pMem_prng_states)-1);
+
+      // Translation genes
+      if (gene_counter < 3) {
+        genotype_deviate[group_id][gene_counter] *= cData.dockpars.base_dmov_mul_sqrt3;
+      }
+      // Orientation and torsion genes
+      else {
+        genotype_deviate[group_id][gene_counter] *= cData.dockpars.base_dang_mul_sqrt3;
+      }
+    }
+
+    // Generating new genotype candidate
+    for (uint32_t gene_counter = new_threadidx_x;
+        gene_counter < cData.dockpars.num_of_genes;
+        gene_counter+= (blockDim.x/RUNS_PER_BLOCK)) {
+      genotype_candidate[group_id][gene_counter] = offspring_genotype[group_id][gene_counter] + 
+        genotype_deviate[group_id][gene_counter]   + 
+        genotype_bias[group_id][gene_counter];
+    }
+
+    // Evaluating candidate
     __threadfence();
     __syncthreads();
 
-    size_t offset = (run_id * cData.dockpars.pop_size + entity_id) * GENOTYPE_LENGTH_IN_GLOBMEM;
-	for (uint32_t gene_counter = threadIdx.x;
-	     gene_counter < cData.dockpars.num_of_genes;
-	     gene_counter+= blockDim.x) {
-        offspring_genotype[gene_counter] = pMem_conformations_next[offset + gene_counter];
-		genotype_bias[gene_counter] = 0.0f;
-	}
+    // ==================================================================
+    gpu_calc_energy_blocked(
+        genotype_candidate[group_id],
+        candidate_energy,
+        run_id,
+        calc_coords[group_id],
+        &(sFloatAccumulator[group_id])
+        );
+    // =================================================================
+
+    if (new_threadidx_x == 0) {
+      evaluation_cnt[group_id]++;
+    }
     __threadfence();
-	__syncthreads();
-    
+    __syncthreads();
 
-	while ((iteration_cnt < cData.dockpars.max_num_of_iters) && (rho > cData.dockpars.rho_lower_bound))
-	{
-		// New random deviate
-		for (uint32_t gene_counter = threadIdx.x;
-		     gene_counter < cData.dockpars.num_of_genes;
-		     gene_counter+= blockDim.x)
-		{
-			genotype_deviate[gene_counter] = rho*(2*gpu_randf(cData.pMem_prng_states)-1);
+    if (candidate_energy < offspring_energy[group_id])	// If candidate is better, success
+    {
+      for (uint32_t gene_counter = new_threadidx_x;
+          gene_counter < cData.dockpars.num_of_genes;
+          gene_counter+= (blockDim.x/RUNS_PER_BLOCK))
+      {
+        // Updating offspring_genotype
+        offspring_genotype[group_id][gene_counter] = genotype_candidate[group_id][gene_counter];
 
-			// Translation genes
-			if (gene_counter < 3) {
-				genotype_deviate[gene_counter] *= cData.dockpars.base_dmov_mul_sqrt3;
-			}
-			// Orientation and torsion genes
-			else {
-				genotype_deviate[gene_counter] *= cData.dockpars.base_dang_mul_sqrt3;
-			}
-		}
+        // Updating genotype_bias
+        genotype_bias[group_id][gene_counter] = 0.6f*genotype_bias[group_id][gene_counter] + 0.4f*genotype_deviate[group_id][gene_counter];
+      }
 
-		// Generating new genotype candidate
-		for (uint32_t gene_counter = threadIdx.x;
-		     gene_counter < cData.dockpars.num_of_genes;
-		     gene_counter+= blockDim.x) {
-			   genotype_candidate[gene_counter] = offspring_genotype[gene_counter] + 
-							      genotype_deviate[gene_counter]   + 
-							      genotype_bias[gene_counter];
-		}
+      // Work-item 0 will overwrite the shared variables
+      // used in the previous if condition
+      __threadfence();
+      __syncthreads();
 
-		// Evaluating candidate
+      if (new_threadidx_x == 0) 
+      {
+        offspring_energy[group_id] = candidate_energy;
+        cons_succ[group_id]++;
+        cons_fail[group_id] = 0;
+      }
+    }
+    else	// If candidate is worser, check the opposite direction
+    {
+      // Generating the other genotype candidate
+      for (uint32_t gene_counter = new_threadidx_x;
+          gene_counter < cData.dockpars.num_of_genes;
+          gene_counter+= (blockDim.x/RUNS_PER_BLOCK)) {
+        genotype_candidate[group_id][gene_counter] = offspring_genotype[group_id][gene_counter] - 
+          genotype_deviate[group_id][gene_counter] - 
+          genotype_bias[group_id][gene_counter];
+      }
+
+      // Evaluating candidate
+      __threadfence();
+      __syncthreads();
+
+      // =================================================================
+      gpu_calc_energy_blocked(
+          genotype_candidate[group_id],
+          candidate_energy,
+          run_id,
+          calc_coords[group_id],
+          &(sFloatAccumulator[group_id])
+          );
+      // =================================================================
+
+      if (new_threadidx_x == 0) {
+        evaluation_cnt[group_id]++;
+
+#if defined (DEBUG_ENERGY_KERNEL)
+        printf("%-18s [%-5s]---{%-5s}   [%-10.8f]---{%-10.8f}\n", "-ENERGY-KERNEL3-", "GRIDS", "INTRA", partial_interE[0], partial_intraE[0]);
+#endif
+      }
+      __threadfence();
+      __syncthreads();
+
+      if (candidate_energy < offspring_energy[group_id]) // If candidate is better, success
+      {
+        for (uint32_t gene_counter = new_threadidx_x;
+            gene_counter < cData.dockpars.num_of_genes;
+            gene_counter+= blockDim.x/RUNS_PER_BLOCK)
+        {
+          // Updating offspring_genotype
+          offspring_genotype[group_id][gene_counter] = genotype_candidate[group_id][gene_counter];
+
+          // Updating genotype_bias
+          genotype_bias[group_id][gene_counter] = 0.6f*genotype_bias[group_id][gene_counter] - 0.4f*genotype_deviate[group_id][gene_counter];
+        }
+
+        // Work-item 0 will overwrite the shared variables
+        // used in the previous if condition
         __threadfence();
         __syncthreads();
 
-		// ==================================================================
-		gpu_calc_energy(
-                genotype_candidate,
-                candidate_energy,
-                run_id,
-                calc_coords,
-                &sFloatAccumulator
-				);
-		// =================================================================
+        if (new_threadidx_x)
+        {
+          offspring_energy[group_id] = candidate_energy;
+          cons_succ[group_id]++;
+          cons_fail[group_id] = 0;
+        }
+      }
+      else	// Failure in both directions
+      {
+        for (uint32_t gene_counter = new_threadidx_x;
+            gene_counter < cData.dockpars.num_of_genes;
+            gene_counter+= blockDim.x/RUNS_PER_BLOCK)
+          // Updating genotype_bias
+          genotype_bias[group_id][gene_counter] = 0.5f*genotype_bias[group_id][gene_counter];
 
-		if (threadIdx.x == 0) {
-			evaluation_cnt++;
-		}
-        __threadfence();
-        __syncthreads();
+        if (new_threadidx_x == 0)
+        {
+          cons_succ[group_id] = 0;
+          cons_fail[group_id]++;
+        }
+      }
+    }
 
-		if (candidate_energy < offspring_energy)	// If candidate is better, success
-		{
-			for (uint32_t gene_counter = threadIdx.x;
-			     gene_counter < cData.dockpars.num_of_genes;
-			     gene_counter+= blockDim.x)
-			{
-				// Updating offspring_genotype
-				offspring_genotype[gene_counter] = genotype_candidate[gene_counter];
+    // Changing rho if needed
+    if (new_threadidx_x == 0)
+    {
+      iteration_cnt[group_id]++;
 
-				// Updating genotype_bias
-				genotype_bias[gene_counter] = 0.6f*genotype_bias[gene_counter] + 0.4f*genotype_deviate[gene_counter];
-			}
+      if (cons_succ[group_id] >= cData.dockpars.cons_limit)
+      {
+        rho[group_id] *= LS_EXP_FACTOR;
+        cons_succ[group_id] = 0;
+      }
+      else
+        if (cons_fail[group_id] >= cData.dockpars.cons_limit)
+        {
+          rho[group_id] *= LS_CONT_FACTOR;
+          cons_fail[group_id] = 0;
+        }
+    }
+    __threadfence();
+    __syncthreads();
+  }
 
-			// Work-item 0 will overwrite the shared variables
-			// used in the previous if condition
-			__threadfence();
-            __syncthreads();
+  // Updating eval counter and energy
+  if (new_threadidx_x == 0) {
+    cData.pMem_evals_of_new_entities[run_id*cData.dockpars.pop_size+entity_id[group_id]] += evaluation_cnt[group_id];
+    pMem_energies_next[run_id*cData.dockpars.pop_size+entity_id[group_id]] = offspring_energy[group_id];
+  }
 
-			if (threadIdx.x == 0)
-			{
-				offspring_energy = candidate_energy;
-				cons_succ++;
-				cons_fail = 0;
-			}
-		}
-		else	// If candidate is worser, check the opposite direction
-		{
-			// Generating the other genotype candidate
-			for (uint32_t gene_counter = threadIdx.x;
-			     gene_counter < cData.dockpars.num_of_genes;
-			     gene_counter+= blockDim.x) {
-				   genotype_candidate[gene_counter] = offspring_genotype[gene_counter] - 
-								      genotype_deviate[gene_counter] - 
-								      genotype_bias[gene_counter];
-			}
-
-			// Evaluating candidate
-			__threadfence();
-            __syncthreads();
-
-			// =================================================================
-			gpu_calc_energy(
-                genotype_candidate,
-                candidate_energy,
-                run_id,
-                calc_coords,
-                &sFloatAccumulator
-            );
-			// =================================================================
-
-			if (threadIdx.x == 0) {
-				evaluation_cnt++;
-
-				#if defined (DEBUG_ENERGY_KERNEL)
-				printf("%-18s [%-5s]---{%-5s}   [%-10.8f]---{%-10.8f}\n", "-ENERGY-KERNEL3-", "GRIDS", "INTRA", partial_interE[0], partial_intraE[0]);
-				#endif
-			}
-            __threadfence();
-            __syncthreads();
-
-			if (candidate_energy < offspring_energy) // If candidate is better, success
-			{
-				for (uint32_t gene_counter = threadIdx.x;
-				     gene_counter < cData.dockpars.num_of_genes;
-			       	     gene_counter+= blockDim.x)
-				{
-					// Updating offspring_genotype
-					offspring_genotype[gene_counter] = genotype_candidate[gene_counter];
-
-					// Updating genotype_bias
-					genotype_bias[gene_counter] = 0.6f*genotype_bias[gene_counter] - 0.4f*genotype_deviate[gene_counter];
-				}
-
-				// Work-item 0 will overwrite the shared variables
-				// used in the previous if condition
-                __threadfence();
-                __syncthreads();
-
-				if (threadIdx.x == 0)
-				{
-					offspring_energy = candidate_energy;
-					cons_succ++;
-					cons_fail = 0;
-				}
-			}
-			else	// Failure in both directions
-			{
-				for (uint32_t gene_counter = threadIdx.x;
-				     gene_counter < cData.dockpars.num_of_genes;
-				     gene_counter+= blockDim.x)
-					   // Updating genotype_bias
-					   genotype_bias[gene_counter] = 0.5f*genotype_bias[gene_counter];
-
-				if (threadIdx.x == 0)
-				{
-					cons_succ = 0;
-					cons_fail++;
-				}
-			}
-		}
-
-		// Changing rho if needed
-		if (threadIdx.x == 0)
-		{
-			iteration_cnt++;
-
-			if (cons_succ >= cData.dockpars.cons_limit)
-			{
-				rho *= LS_EXP_FACTOR;
-				cons_succ = 0;
-			}
-			else
-				if (cons_fail >= cData.dockpars.cons_limit)
-				{
-					rho *= LS_CONT_FACTOR;
-					cons_fail = 0;
-				}
-		}
-        __threadfence();
-        __syncthreads();
-	}
-
-	// Updating eval counter and energy
-	if (threadIdx.x == 0) {
-		cData.pMem_evals_of_new_entities[run_id*cData.dockpars.pop_size+entity_id] += evaluation_cnt;
-		pMem_energies_next[run_id*cData.dockpars.pop_size+entity_id] = offspring_energy;
-	}
-
-	// Mapping torsion angles and writing out results
-    offset = (run_id*cData.dockpars.pop_size+entity_id)*GENOTYPE_LENGTH_IN_GLOBMEM;
-	for (uint32_t gene_counter = threadIdx.x;
-	     gene_counter < cData.dockpars.num_of_genes;
-	     gene_counter+= blockDim.x) {
-        if (gene_counter >= 3) {
-		    map_angle(offspring_genotype[gene_counter]);
-		}
-        pMem_conformations_next[offset + gene_counter] = offspring_genotype[gene_counter];
-	}
+  // Mapping torsion angles and writing out results
+  offset = (run_id*cData.dockpars.pop_size+entity_id[group_id])*GENOTYPE_LENGTH_IN_GLOBMEM;
+  for (uint32_t gene_counter = new_threadidx_x;
+      gene_counter < cData.dockpars.num_of_genes;
+      gene_counter+= blockDim.x/RUNS_PER_BLOCK) {
+    if (gene_counter >= 3) {
+      map_angle(offspring_genotype[group_id][gene_counter]);
+    }
+    pMem_conformations_next[offset + gene_counter] = offspring_genotype[group_id][gene_counter];
+  }
 }
 
 
@@ -295,7 +300,7 @@ void gpu_perform_LS(
 )
 {
     //size_t sz_shared = (9 * cpuData.dockpars.num_of_atoms + 5 * cpuData.dockpars.num_of_genes) * sizeof(float);
-    gpu_perform_LS_kernel<<<blocks, threads>>>(pMem_conformations_next, pMem_energies_next);
+    gpu_perform_LS_kernel<<<(blocks+RUNS_PER_BLOCK-1)/RUNS_PER_BLOCK, threads>>>(pMem_conformations_next, pMem_energies_next);
     LAUNCHERROR("gpu_perform_LS_kernel");     
 #if 0
     cudaError_t status;

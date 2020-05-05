@@ -91,6 +91,28 @@ __device__ inline int64_t ullitolli(uint64_t u)
     value = (float)(*pAccumulator); \
     __syncthreads();
 
+#define CGREDUCEFLOATSUM(value, pAccumulator,group) \
+    if (group.thread_rank() == 0) \
+    { \
+        *pAccumulator = 0; \
+    } \
+    group.sync(); \
+    if (group.any(value != 0.0f)); \
+    { \
+        uint32_t tgx            = group.thread_rank(); \
+        value                  += group.shfl(value, tgx ^ 1); \
+        value                  += group.shfl(value, tgx ^ 2); \
+        value                  += group.shfl(value, tgx ^ 4); \
+        value                  += group.shfl(value, tgx ^ 8); \
+        value                  += group.shfl(value, tgx ^ 16); \
+        if (tgx == 0) \
+        { \
+            atomicAdd(pAccumulator, value); \
+        } \
+    } \
+    group.sync(); \
+    value = (float)(*pAccumulator); \
+    group.sync();
 
 
 
