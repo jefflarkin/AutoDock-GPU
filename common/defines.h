@@ -96,8 +96,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 // In kernel3.cu this determines how many runs
 // to do per block. Set too large and it will overflow
 // shared memory. 
-#define RUNS_PER_BLOCK 1
+// NOTE: RUNS_PER_BLOCK MUST DIVIDE EVENLY INTO NUM_OF_THREADS_PER_BLOCK
+// NOTE: CURRENTLY ONLY 1 OR 2 RUNS_PER_BLOCK ARE SUPPORTED
+#define RUNS_PER_BLOCK 2
 #define THREADS_PER_ENTITY NUM_OF_THREADS_PER_BLOCK/RUNS_PER_BLOCK
+#if ( (RUNS_PER_BLOCK!=1) && (RUNS_PER_BLOCK!=2))
+#error "RUNS_PER_BLOCK must be 1 or 2"
+#endif
 
 
 // TODO: convert this into a program arg
