@@ -39,7 +39,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 
 int setup(Gridinfo&		mygrid,
-	  std::vector<float>& floatgrids,
+	  //std::vector<float>& floatgrids,
+	  float**              floatgrids,
 	  Dockpars&		mypars,
 	  Liganddata&		myligand_init,
 	  Liganddata&		myxrayligand,

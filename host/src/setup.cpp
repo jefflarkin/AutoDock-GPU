@@ -35,7 +35,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "setup.hpp"
 
 int setup(Gridinfo&            mygrid,
-	  std::vector<float>& floatgrids,
+	  //std::vector<float>& floatgrids,
+	  float**              floatgrids,
 	  Dockpars&            mypars,
 	  Liganddata&          myligand_init,
 	  Liganddata&          myxrayligand,
@@ -93,10 +94,10 @@ int setup(Gridinfo&            mygrid,
 		{printf("\n\nError in get_liganddata, stopped job."); return 1;}
 
 	// Resize grid
-	floatgrids.resize(4*(mygrid.num_of_atypes+2)*mygrid.size_xyz[0]*mygrid.size_xyz[1]*mygrid.size_xyz[2]);
+	//floatgrids.resize(4*(mygrid.num_of_atypes+2)*mygrid.size_xyz[0]*mygrid.size_xyz[1]*mygrid.size_xyz[2]);
 
 	//Reading the grid files and storing values in the memory region pointed by floatgrids
-	if (get_gridvalues_f(&mygrid, floatgrids.data(), mypars.cgmaps) != 0)
+	if (get_gridvalues_f(&mygrid, floatgrids, mypars.cgmaps) != 0)
 		{printf("\n\nError in get_gridvalues_f, stopped job."); return 1;}
 
 	//------------------------------------------------------------
@@ -128,7 +129,7 @@ int setup(Gridinfo&            mygrid,
 		print_ref_lig_energies_f(myligand_init,
 					 mypars.smooth,
 					 mygrid,
-					 floatgrids.data(),
+					 *floatgrids,
 					 mypars.coeffs.scaled_AD4_coeff_elec,
 					 mypars.coeffs.AD4_coeff_desolv,
 					 mypars.qasp);

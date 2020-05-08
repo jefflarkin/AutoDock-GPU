@@ -110,7 +110,8 @@ int main(int argc, char* argv[])
     Liganddata myligand_init[nqueues];
     Gridinfo   mygrid[nqueues];
     Liganddata myxrayligand[nqueues];
-    std::vector<float> floatgrids[nqueues];
+    //std::vector<float> floatgrids[nqueues];
+    std::vector<float*> floatgrids(nqueues);
 	SimulationState sim_state[nqueues];
 	GpuData cData;
 	GpuTempData tData;
@@ -161,7 +162,9 @@ int main(int argc, char* argv[])
 					job_in_queue[t_id]=i_job;
 					start_timer(setup_timer);
 					// Load files, read inputs, prepare arrays for docking stage
-					if (setup(mygrid[t_id], floatgrids[t_id], mypars[t_id], myligand_init[t_id], myxrayligand[t_id], filelist, i_job, argc, argv) != 0) {
+					//float *local_fg = floatgrids[t_id];
+					if (setup(mygrid[t_id], &(floatgrids[t_id]), mypars[t_id], myligand_init[t_id], myxrayligand[t_id], filelist, i_job, argc, argv) != 0) {
+						//floatgrids[t_id] = local_fg;
 						// If error encountered: Set error flag to 1; Add to count of finished jobs
 						// Keep in setup stage rather than moving to launch stage so a different job will be set up
 						printf("\n\nError in setup of Job #%d:", i_job);
@@ -188,7 +191,7 @@ int main(int argc, char* argv[])
 				printf ("\n(Thread %d is processing Job %d)",t_id,i_job); fflush(stdout);
 
 				start_timer(processing_timer);
-                                process_result(&(mygrid[t_id]), floatgrids[t_id].data(), &(mypars[t_id]), &(myligand_init[t_id]), &(myxrayligand[t_id]), &argc,argv, sim_state[t_id]);
+                                process_result(&(mygrid[t_id]), floatgrids[t_id], &(mypars[t_id]), &(myligand_init[t_id]), &(myxrayligand[t_id]), &argc,argv, sim_state[t_id]);
 #ifdef USE_PIPELINE
 				#pragma omp atomic update
 #endif
@@ -220,7 +223,7 @@ int main(int argc, char* argv[])
                                 	printf("\n   Ligands from: %s", filelist.ligand_files[i_job].c_str()); fflush(stdout);
 				}
 				// Starting Docking
-				if (docking_with_gpu(&(mygrid[i_queue]), floatgrids[i_queue].data(), &(mypars[i_queue]), &(myligand_init[i_queue]), &(myxrayligand[i_queue]), profiler.p[(get_profiles ? i_job : 0)], &argc, argv, sim_state[i_queue], cData, tData ) != 0){
+				if (docking_with_gpu(&(mygrid[i_queue]), floatgrids[i_queue], &(mypars[i_queue]), &(myligand_init[i_queue]), &(myxrayligand[i_queue]), profiler.p[(get_profiles ? i_job : 0)], &argc, argv, sim_state[i_queue], cData, tData ) != 0){
 
 					// If error encountered: Set error flag to 1; Add to count of finished jobs
 					// Set back to setup stage rather than moving to processing stage so a different job will be set up
