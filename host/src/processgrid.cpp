@@ -248,3 +248,16 @@ int get_gridvalues_f(const Gridinfo* mygrid, float** fgrids, bool cgmaps)
 	return 0;
 }
 
+// This will release the resources used by get_gridinfo and get_gridvalues_f
+// to cache files.
+void release_grids()
+{
+	for (auto grid = masterGrids.begin(); grid != masterGrids.end(); grid++)
+	{
+		// This will likely be cleaned up already due to moving into the
+		// map, but cleaning up memory to be sure.
+        grid->second.second.clear();
+	}
+	masterGrids.clear();
+}
+

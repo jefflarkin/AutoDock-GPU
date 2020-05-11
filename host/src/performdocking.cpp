@@ -147,6 +147,15 @@ inline float stddev(float* average_sd2_N)
 	return sqrt(sq)/average_sd2_N[2];
 }
 
+// Clears all GPU memory held in place by caching grids on the GPU.
+void clear_gpu()
+{
+	for (auto grid = present_table.begin(); grid != present_table.end(); grid++)
+	{
+		cudaFree(grid->second);
+	}
+	present_table.clear();
+}
 void setup_gpu_for_docking(GpuData& cData, GpuTempData& tData)
 {
     auto const t0 = std::chrono::steady_clock::now();

@@ -257,6 +257,8 @@ int main(int argc, char* argv[])
 	  finish_gpu_from_docking(cData,tData);
 	}
 	} // end of parallel section
+	clear_gpu();
+	release_grids();
 
 #ifndef _WIN32
 	// Total time measurement

@@ -84,4 +84,8 @@ int get_gridvalues_f(const Gridinfo* mygrid,
 		     float** fgrids,
 		     bool cgmaps);
 
+// This will release the resources used by get_gridinfo and get_gridvalues_f
+// to cache files.
+void release_grids();
+
 #endif /* PROCESSGRID_H_ */

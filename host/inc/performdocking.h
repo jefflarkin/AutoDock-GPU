@@ -66,8 +66,12 @@ typedef struct {
 } Gradientparameters;
 #endif
 
+// Clears all GPU memory held in place by caching grids on the GPU.
+void clear_gpu();
+// Allocates space for GPU constants and copies what can be copied.
 void setup_gpu_for_docking(GpuData& cData, 
                            GpuTempData& tData);
+// Frees GPU memory allocated in setup_gpu_for_docking.
 void finish_gpu_from_docking(GpuData& cData, 
                              GpuTempData& tData);
 int docking_with_gpu(const Gridinfo* 		mygrid,
