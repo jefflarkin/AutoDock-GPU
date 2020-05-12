@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "processgrid.h"
 
 std::map< std::string, std::pair<Gridinfo,std::vector<float>> > masterGrids;
+std::map< std::string, std::vector<float> > masterMaps;
 
 int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
 {
@@ -193,42 +194,58 @@ int get_gridvalues_f(const Gridinfo* mygrid, float** fgrids, bool cgmaps)
 	  	strcat(tempstr, ".");
 	  	strcat(tempstr, mygrid->grid_types[t]);
 	  	strcat(tempstr, ".map");
-	  	fp = fopen(tempstr, "rb"); // fp = fopen(tempstr, "r");
-	  	if (fp == NULL)
-	  	{
-	  		printf("Error: can't open %s!\n", tempstr);
-	  		if ((strncmp(mygrid->grid_types[t],"CG",2)==0) ||
-	  		    (strncmp(mygrid->grid_types[t],"G",1)==0))
-	  		{
-	  			if(cgmaps)
-	  				printf("-> Expecting an individual map for each CGx and Gx (x=0..9) atom type.\n");
-	  			else
-	  				printf("-> Expecting one map file, ending in .CG.map and .G0.map, for CGx and Gx atom types, respectively.\n");
-	  		}
-	  		return 1;
-	  	}
 
-	  	//seeking to first data
-	  	do    fscanf(fp, "%s", tempstr);
-	  	while (strcmp(tempstr, "CENTER") != 0);
-	  	fscanf(fp, "%s", tempstr);
-	  	fscanf(fp, "%s", tempstr);
-	  	fscanf(fp, "%s", tempstr);
+        auto searchMap = masterMaps.find(std::string(tempstr));
+        if ( searchMap == masterMaps.end() )
+		{ // Map file not yet cached
+	  	  fp = fopen(tempstr, "rb"); // fp = fopen(tempstr, "r");
+	  	  if (fp == NULL)
+	  	  {
+	  		  printf("Error: can't open %s!\n", tempstr);
+	  		  if ((strncmp(mygrid->grid_types[t],"CG",2)==0) ||
+	  		      (strncmp(mygrid->grid_types[t],"G",1)==0))
+	  		  {
+	  			  if(cgmaps)
+	  				  printf("-> Expecting an individual map for each CGx and Gx (x=0..9) atom type.\n");
+	  			  else
+	  				  printf("-> Expecting one map file, ending in .CG.map and .G0.map, for CGx and Gx atom types, respectively.\n");
+	  		  }
+	  		  return 1;
+	  	  }
+          size_t sizemap = 4*mygrid->size_xyz[0]*mygrid->size_xyz[1]*mygrid->size_xyz[2];
+          std::vector<float> tmpmap(sizemap);
+		  float* mypoi2 = tmpmap.data();
 
-	  	unsigned int g1 = mygrid->size_xyz[0];
-	  	unsigned int g2 = g1*mygrid->size_xyz[1];
-	  	//reading values
-	  	for (z=0; z < mygrid->size_xyz[2]; z++)
-	  		for (y=0; y < mygrid->size_xyz[1]; y++)
-	  			for (x=0; x < mygrid->size_xyz[0]; x++)
-	  			{
-	  				fscanf(fp, "%f", mypoi);
-	  				// fill in duplicate data for linearized memory access in kernel
-	  				if(y>0) *(mypoi-4*g1+1) = *mypoi;
-	  				if(z>0) *(mypoi-4*g2+2) = *mypoi;
-	  				if(y>0 && z>0) *(mypoi-4*(g2+g1)+3) = *mypoi;
-	  				mypoi+=4;
-	  			}
+	  	  //seeking to first data
+	  	  do    fscanf(fp, "%s", tempstr);
+	  	  while (strcmp(tempstr, "CENTER") != 0);
+	  	  fscanf(fp, "%s", tempstr);
+	  	  fscanf(fp, "%s", tempstr);
+	  	  fscanf(fp, "%s", tempstr);
+
+	  	  unsigned int g1 = mygrid->size_xyz[0];
+	  	  unsigned int g2 = g1*mygrid->size_xyz[1];
+	  	  //reading values
+	  	  for (z=0; z < mygrid->size_xyz[2]; z++)
+	  		  for (y=0; y < mygrid->size_xyz[1]; y++)
+	  			  for (x=0; x < mygrid->size_xyz[0]; x++)
+	  			  {
+	  				  fscanf(fp, "%f", mypoi);
+	  				  // fill in duplicate data for linearized memory access in kernel
+	  				  if(y>0) *(mypoi-4*g1+1) = *mypoi;
+	  				  if(z>0) *(mypoi-4*g2+2) = *mypoi;
+	  				  if(y>0 && z>0) *(mypoi-4*(g2+g1)+3) = *mypoi;
+	  				  mypoi2+=4;
+	  			  }
+          memcpy((void*)mypoi,(void*)tmpmap.data(),sizemap*sizeof(float));
+		  mypoi += sizemap;
+	      masterMaps.insert({std::string(tempstr), std::move(tmpmap)}); 
+		} else
+		{ // Map file already cached
+          size_t sizemap = 4*mygrid->size_xyz[0]*mygrid->size_xyz[1]*mygrid->size_xyz[2];
+          memcpy(mypoi,searchMap->second.data(),sizemap*sizeof(float));
+		  mypoi += sizemap;
+		}
 	  }
 
       // Make a Gridinfo that will be owned by the the hashmap
@@ -259,5 +276,12 @@ void release_grids()
         grid->second.second.clear();
 	}
 	masterGrids.clear();
+	for (auto map = masterMaps.begin(); map != masterMaps.end(); map++)
+	{
+		// This will likely be cleaned up already due to moving into the
+		// map, but cleaning up memory to be sure.
+        map->second.clear();
+	}
+	masterMaps.clear();
 }
 

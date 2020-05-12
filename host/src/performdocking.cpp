@@ -511,7 +511,20 @@ filled with clock() */
 	{
 		//fprintf(stderr, "\nDEBUG: floatgrids not on GPU yet\n");
         status = cudaMalloc((void**)&(tData.pMem_fgrids), size_floatgrids);
-        RTERROR(status, "pMem_fgrids: failed to allocate GPU memory.\n");
+		// This attempts to recover from GPU OOM by freeing cached floatgrids.
+		// It makes no attempt to choose the memory intelligently. 
+		if ( status == cudaErrorMemoryAllocation )
+		{ // Free memory from GPU cache and try again
+          for ( auto iter = present_table.begin; iter < present_table.end; iter++)
+		  {
+			  cudaFree(iter->second);
+			  present_table.erase(iter);
+              status = cudaMalloc((void**)&(tData.pMem_fgrids), size_floatgrids);
+			  if ( status == cudaSuccess ) break;
+		  }
+		  // If last status is still not success, hard fail
+          RTERROR(status, "pMem_fgrids: failed to allocate GPU memory.\n");
+		}
 		
         status = cudaMemcpy(tData.pMem_fgrids, cpu_floatgrids, size_floatgrids, cudaMemcpyHostToDevice);
         RTERROR(status, "pMem_fgrids: failed to upload to GPU memory.\n"); 
