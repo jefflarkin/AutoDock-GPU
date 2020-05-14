@@ -515,7 +515,7 @@ filled with clock() */
 		// It makes no attempt to choose the memory intelligently. 
 		if ( status == cudaErrorMemoryAllocation )
 		{ // Free memory from GPU cache and try again
-          for ( auto iter = present_table.begin; iter < present_table.end; iter++)
+          for ( auto iter = present_table.begin(); iter != present_table.end(); iter++)
 		  {
 			  cudaFree(iter->second);
 			  present_table.erase(iter);
