@@ -77,12 +77,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #define OPT_PROG INC KNWI REP KGDB
 
 #include <vector>
+#include <map>
 
 #include "autostop.hpp"
 #include "performdocking.h"
 #include "correct_grad_axisangle.h"
 #include "GpuData.h"
 
+std::map<float*,float*> present_table;
 
 // CUDA kernels
 void SetKernelsGpuData(GpuData* pData);
@@ -223,8 +225,8 @@ void setup_gpu_for_docking(GpuData& cData, GpuTempData& tData)
 
 	// Allocate temporary data - JL TODO - Are these sizes correct?
 	size_t size_floatgrids = 4 * (sizeof(float)) * (MAX_NUM_OF_ATYPES+2) * (MAX_NUM_GRIDPOINTS) * (MAX_NUM_GRIDPOINTS) * (MAX_NUM_GRIDPOINTS);    
-    status = cudaMalloc((void**)&(tData.pMem_fgrids), size_floatgrids);
-    RTERROR(status, "pMem_fgrids: failed to allocate GPU memory.\n");
+    //status = cudaMalloc((void**)&(tData.pMem_fgrids), size_floatgrids);
+    //RTERROR(status, "pMem_fgrids: failed to allocate GPU memory.\n");
 	size_t size_populations = MAX_NUM_OF_RUNS * MAX_POPSIZE * GENOTYPE_LENGTH_IN_GLOBMEM*sizeof(float);
     status = cudaMalloc((void**)&(tData.pMem_conformations1), size_populations);
     RTERROR(status, "pMem_conformations1: failed to allocate GPU memory.\n");   
@@ -274,8 +276,8 @@ void finish_gpu_from_docking(GpuData& cData, GpuTempData& tData)
     RTERROR(status, "cudaFree: error freeing cData.pMem_dependence_on_rotangle_const");  
     
     // Non-constant
-    status = cudaFree(tData.pMem_fgrids);
-    RTERROR(status, "cudaFree: error freeing pMem_fgrids");
+    //status = cudaFree(tData.pMem_fgrids);
+    //RTERROR(status, "cudaFree: error freeing pMem_fgrids");
     status = cudaFree(tData.pMem_conformations1);
     RTERROR(status, "cudaFree: error freeing pMem_conformations1");
     status = cudaFree(tData.pMem_conformations2);
@@ -491,6 +493,18 @@ filled with clock() */
     float* pMem_conformations_next = tData.pMem_conformations2;
     float* pMem_energies_current = tData.pMem_energies1;
     float* pMem_energies_next = tData.pMem_energies2;
+
+	auto searchPresent = present_table.find(cpu_floatgrids);
+	if ( searchPresent == present_table.end() )
+	{
+		cudaMalloc(&(tData.pMem_fgrids), size_floatgrids);
+    	status = cudaMemcpy(tData.pMem_fgrids, cpu_floatgrids, size_floatgrids, cudaMemcpyHostToDevice);
+    	RTERROR(status, "pMem_fgrids: failed to upload to GPU memory.\n"); 
+		present_table.insert({cpu_floatgrids,tData.pMem_fgrids});
+	} else
+	{
+		tData.pMem_fgrids = searchPresent->second;
+	}
     
     // Set constant pointers
     cData.pMem_fgrids = tData.pMem_fgrids;
@@ -503,8 +517,6 @@ filled with clock() */
     cData.warpbits = 5;
 
     // Upload data
-    status = cudaMemcpy(tData.pMem_fgrids, cpu_floatgrids, size_floatgrids, cudaMemcpyHostToDevice);
-    RTERROR(status, "pMem_fgrids: failed to upload to GPU memory.\n"); 
     status = cudaMemcpy(pMem_conformations_current, cpu_init_populations, size_populations, cudaMemcpyHostToDevice);
     RTERROR(status, "pMem_conformations_current: failed to upload to GPU memory.\n"); 
     status = cudaMemcpy(tData.pMem_gpu_evals_of_runs, sim_state.cpu_evals_of_runs.data(), size_evals_of_runs, cudaMemcpyHostToDevice);

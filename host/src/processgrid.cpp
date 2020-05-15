@@ -24,10 +24,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 
 
-
+#include <map>
+#include <string>
 
 
 #include "processgrid.h"
+
+#define FPRINTF(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr);}
+std::map<std::string,float*> fgridCache;
 
 int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
 {
@@ -46,6 +50,7 @@ int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
 	#ifndef _WIN32
 	char* ts1 = strdup(fldfilename);
 	mygrid->grid_file_path = dirname(ts1);
+	mygrid->grid_file_name = strdup(fldfilename);
 	#else
 	char* ts1 = strdup(fldfilename);
 	char drive_tmp[_MAX_DRIVE];
@@ -58,6 +63,7 @@ int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
 	for (unsigned int i=0; i<2*_MAX_DIR; i++) {
 		mygrid->grid_file_path[i] = result[i];
 	}
+	strncpy(mygrid->grid_file_name,fldfilename,2*_MAX_DIR);
 	#endif
 	// ----------------------------------------------------
 
@@ -153,57 +159,68 @@ int get_gridvalues_f(const Gridinfo* mygrid, float* fgrids, bool cgmaps)
 
 	mypoi = fgrids;
 
-	for (t=0; t < mygrid->num_of_atypes+2; t++)
+    auto fgidSearch = fgridCache.find(mygrid->grid_file_name);
+	if ( fgidSearch != fgridCache.end() )
+	{ 
+		FPRINTF("\n DEBUG - Found cached copy of fgrids for %s\n", mygrid->grid_file_name);
+		fgrids = fgidSearch->second;
+	} 
+	else
 	{
-		//opening corresponding .map file
-		//-------------------------------------
-		// Added the complete path of associated grid files.
-		strcpy(tempstr,mygrid->grid_file_path);
-		strcat(tempstr, "/");
-		strcat(tempstr, mygrid->receptor_name);
-		
-		//strcpy(tempstr, mygrid->receptor_name);
-		//-------------------------------------
-		strcat(tempstr, ".");
-		strcat(tempstr, mygrid->grid_types[t]);
-		strcat(tempstr, ".map");
-		fp = fopen(tempstr, "rb"); // fp = fopen(tempstr, "r");
-		if (fp == NULL)
+		for (t=0; t < mygrid->num_of_atypes+2; t++)
 		{
-			printf("Error: can't open %s!\n", tempstr);
-			if ((strncmp(mygrid->grid_types[t],"CG",2)==0) ||
-			    (strncmp(mygrid->grid_types[t],"G",1)==0))
+			//opening corresponding .map file
+			//-------------------------------------
+			// Added the complete path of associated grid files.
+			strcpy(tempstr,mygrid->grid_file_path);
+			strcat(tempstr, "/");
+			strcat(tempstr, mygrid->receptor_name);
+
+			//strcpy(tempstr, mygrid->receptor_name);
+			//-------------------------------------
+			strcat(tempstr, ".");
+			strcat(tempstr, mygrid->grid_types[t]);
+			strcat(tempstr, ".map");
+			fp = fopen(tempstr, "rb"); // fp = fopen(tempstr, "r");
+			if (fp == NULL)
 			{
-				if(cgmaps)
-					printf("-> Expecting an individual map for each CGx and Gx (x=0..9) atom type.\n");
-				else
-					printf("-> Expecting one map file, ending in .CG.map and .G0.map, for CGx and Gx atom types, respectively.\n");
-			}
-			return 1;
-		}
-
-		//seeking to first data
-		do    fscanf(fp, "%s", tempstr);
-		while (strcmp(tempstr, "CENTER") != 0);
-		fscanf(fp, "%s", tempstr);
-		fscanf(fp, "%s", tempstr);
-		fscanf(fp, "%s", tempstr);
-
-		unsigned int g1 = mygrid->size_xyz[0];
-		unsigned int g2 = g1*mygrid->size_xyz[1];
-		//reading values
-		for (z=0; z < mygrid->size_xyz[2]; z++)
-			for (y=0; y < mygrid->size_xyz[1]; y++)
-				for (x=0; x < mygrid->size_xyz[0]; x++)
+				printf("Error: can't open %s!\n", tempstr);
+				if ((strncmp(mygrid->grid_types[t],"CG",2)==0) ||
+				    (strncmp(mygrid->grid_types[t],"G",1)==0))
 				{
-					fscanf(fp, "%f", mypoi);
-					// fill in duplicate data for linearized memory access in kernel
-					if(y>0) *(mypoi-4*g1+1) = *mypoi;
-					if(z>0) *(mypoi-4*g2+2) = *mypoi;
-					if(y>0 && z>0) *(mypoi-4*(g2+g1)+3) = *mypoi;
-					mypoi+=4;
+					if(cgmaps)
+						printf("-> Expecting an individual map for each CGx and Gx (x=0..9) atom type.\n");
+					else
+						printf("-> Expecting one map file, ending in .CG.map and .G0.map, for CGx and Gx atom types, respectively.\n");
 				}
+				return 1;
+			}
+
+			//seeking to first data
+			do    fscanf(fp, "%s", tempstr);
+			while (strcmp(tempstr, "CENTER") != 0);
+			fscanf(fp, "%s", tempstr);
+			fscanf(fp, "%s", tempstr);
+			fscanf(fp, "%s", tempstr);
+
+			unsigned int g1 = mygrid->size_xyz[0];
+			unsigned int g2 = g1*mygrid->size_xyz[1];
+			//reading values
+			for (z=0; z < mygrid->size_xyz[2]; z++)
+				for (y=0; y < mygrid->size_xyz[1]; y++)
+					for (x=0; x < mygrid->size_xyz[0]; x++)
+					{
+						fscanf(fp, "%f", mypoi);
+						// fill in duplicate data for linearized memory access in kernel
+						if(y>0) *(mypoi-4*g1+1) = *mypoi;
+						if(z>0) *(mypoi-4*g2+2) = *mypoi;
+						if(y>0 && z>0) *(mypoi-4*(g2+g1)+3) = *mypoi;
+						mypoi+=4;
+					}
+		}
+		fgridCache.insert({std::string(mygrid->grid_file_name), fgrids});
 	}
+	FPRINTF("\nDEBUG fgrids = 0x%lx\n", fgrids)
 
 	return 0;
 }
