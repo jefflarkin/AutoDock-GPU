@@ -51,7 +51,8 @@ int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
 
 	#ifndef _WIN32
 	char* ts1 = strdup(fldfilename);
-	mygrid->grid_file_path = dirname(ts1);
+	mygrid->grid_file_dir= dirname(ts1);
+	mygrid->grid_file_path = strdup(fldfilename);
 	#else
 	char* ts1 = strdup(fldfilename);
 	char drive_tmp[_MAX_DRIVE];
@@ -62,8 +63,9 @@ int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
 	strcpy(result, drive_tmp);
 	strcpy(result, path_tmp);
 	for (unsigned int i=0; i<2*_MAX_DIR; i++) {
-		mygrid->grid_file_path[i] = result[i];
+		mygrid->grid_file_dir[i] = result[i];
 	}
+	strncpy(mygrid->grid_file_path, fldfilename, 2*_MAX_DIR);
 	#endif
 	// ----------------------------------------------------
 
@@ -185,7 +187,7 @@ int get_gridvalues_f(const Gridinfo* mygrid, float** fgrids, bool cgmaps)
 	  	//opening corresponding .map file
 	  	//-------------------------------------
 	  	// Added the complete path of associated grid files.
-	  	strcpy(tempstr,mygrid->grid_file_path);
+	  	strcpy(tempstr,mygrid->grid_file_dir);
 	  	strcat(tempstr, "/");
 	  	strcat(tempstr, mygrid->receptor_name);
 	  	

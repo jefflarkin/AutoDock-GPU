@@ -546,7 +546,6 @@ filled with clock() */
     cData.warpbits = 5;
 
     // Upload data
-	fprintf(stderr,"DEBUG: pMem_fgrids: %lx\n",tData.pMem_fgrids);
     status = cudaMemcpy(pMem_conformations_current, cpu_init_populations, size_populations, cudaMemcpyHostToDevice);
     RTERROR(status, "pMem_conformations_current: failed to upload to GPU memory.\n"); 
     status = cudaMemcpy(tData.pMem_gpu_evals_of_runs, sim_state.cpu_evals_of_runs.data(), size_evals_of_runs, cudaMemcpyHostToDevice);

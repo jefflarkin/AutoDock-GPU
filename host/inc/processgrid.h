@@ -66,8 +66,10 @@ typedef struct
 
 #ifndef _WIN32
 	char*  grid_file_path;	  // Added to store the full path of the grid file
+	char*  grid_file_dir;	  // Added to store the full dir of the grid file
 #else
 	char  grid_file_path[2*_MAX_DIR];	  // Added to store the full path of the grid file
+	char  grid_file_dir[2*_MAX_DIR];	  // Added to store the full dir of the grid file
 #endif
 	char   receptor_name [64];
 	int    size_xyz [3];
