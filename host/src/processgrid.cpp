@@ -71,7 +71,7 @@ int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
     auto search = gridinfoCache.find(std::string(fldfilename));
     if ( search == gridinfoCache.end() )
     {
-        FPRINTF("\nDEBUG - No cached grid metadata\n");
+        //FPRINTF("\nDEBUG - No cached grid metadata\n");
 	    //Processing fld file
 	    fp = fopen(fldfilename, "rb"); // fp = fopen(fldfilename, "r");
 	    if (fp == NULL)
@@ -148,7 +148,7 @@ int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
         gridinfoCache.insert({std::string(fldfilename),*mygrid});
     } else
     {
-        FPRINTF("\nDEBUG - Using cached grid metadata\n");
+        //FPRINTF("\nDEBUG - Using cached grid metadata\n");
         memcpy((void*)mygrid,(void*)&(search->second),sizeof(Gridinfo));
     }
 
