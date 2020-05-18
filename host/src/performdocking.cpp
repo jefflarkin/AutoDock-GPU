@@ -292,6 +292,13 @@ void finish_gpu_from_docking(GpuData& cData, GpuTempData& tData)
     RTERROR(status, "cudaFree: error freeing pMem_gpu_evals_of_runs");
     status = cudaFree(tData.pMem_prng_states);
     RTERROR(status, "cudaFree: error freeing pMem_prng_states");
+
+	for ( auto iter = present_table.begin(); iter != present_table.end(); iter++ )
+	{
+		status = cudaFree(iter->second);
+    	RTERROR(status, "cudaFree: error freeing from present_table");
+		present_table.erase(iter);
+	}
 }
 
 int docking_with_gpu(   const Gridinfo*  	mygrid,
@@ -497,7 +504,20 @@ filled with clock() */
 	auto searchPresent = present_table.find(cpu_floatgrids);
 	if ( searchPresent == present_table.end() )
 	{
-		cudaMalloc(&(tData.pMem_fgrids), size_floatgrids);
+		status = cudaMalloc(&(tData.pMem_fgrids), size_floatgrids);
+		// If the GPU is out of memory, free floatgrids until enough memory is available
+		// or abort if all else fails
+		if ( status == cudaErrorMemoryAllocation )
+		{
+			for (auto iter = present_table.begin(); iter != present_table.end() && status != cudaSuccess; iter++)
+			{
+				status = cudaFree(iter->second);
+    			RTERROR(status, "cudaFree: error freeing from present_table");
+				present_table.erase(iter);
+				status = cudaMalloc(&(tData.pMem_fgrids), size_floatgrids);
+			}
+		}
+    	RTERROR(status, "pMem_fgrids: failed to allocate to GPU memory.\n"); 
     	status = cudaMemcpy(tData.pMem_fgrids, cpu_floatgrids, size_floatgrids, cudaMemcpyHostToDevice);
     	RTERROR(status, "pMem_fgrids: failed to upload to GPU memory.\n"); 
 		present_table.insert({cpu_floatgrids,tData.pMem_fgrids});

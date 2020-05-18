@@ -30,7 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #include "processgrid.h"
 
-#define FPRINTF(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr);}
+//#define FPRINTF(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr);}
 std::map<std::string,float*> fgridCache;
 
 int get_gridinfo(const char* fldfilename, Gridinfo* mygrid)
@@ -162,7 +162,7 @@ int get_gridvalues_f(const Gridinfo* mygrid, float* fgrids, bool cgmaps)
     auto fgidSearch = fgridCache.find(mygrid->grid_file_name);
 	if ( fgidSearch != fgridCache.end() )
 	{ 
-		FPRINTF("\n DEBUG - Found cached copy of fgrids for %s\n", mygrid->grid_file_name);
+		//FPRINTF("\n DEBUG - Found cached copy of fgrids for %s\n", mygrid->grid_file_name);
 		fgrids = fgidSearch->second;
 	} 
 	else
@@ -220,7 +220,7 @@ int get_gridvalues_f(const Gridinfo* mygrid, float* fgrids, bool cgmaps)
 		}
 		fgridCache.insert({std::string(mygrid->grid_file_name), fgrids});
 	}
-	FPRINTF("\nDEBUG fgrids = 0x%lx\n", fgrids)
+	//FPRINTF("\nDEBUG fgrids = 0x%lx\n", fgrids)
 
 	return 0;
 }
