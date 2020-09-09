@@ -54,6 +54,11 @@ ifeq ($(OVERLAP), ON)
 	PIPELINE=-DUSE_PIPELINE -fopenmp
 endif
 
+ifeq ($(NVTX),ON)
+	NVTXFLAG=-DUSE_NVTX
+endif
+
+
 
 BIN := $(wildcard $(TARGET)*)
 
@@ -202,7 +207,7 @@ odock: check-env-all kernels $(SRC)
 	$(CFLAGS) \
 	$(LIB_CUDA) \
 	-o$(BIN_DIR)/$(TARGET) \
-	$(DEV) $(NWI) $(PIPELINE) $(OPT) $(DD) $(REP) $(KFLAGS)
+	$(DEV) $(NWI) $(PIPELINE) $(OPT) $(DD) $(REP) $(KFLAGS) $(NVTXFLAG)
 
 # Example
 # 1ac8: for testing gradients of translation and rotation genes

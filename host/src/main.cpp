@@ -43,6 +43,16 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "simulation_state.hpp"
 #include "GpuData.h"
 
+#ifdef USE_NVTX
+#include <nvtx3/nvToolsExt.h>
+nvtxDomainHandle_t nvtxDomain;
+#define NVTX_PUSH(msg) { nvtxDomainRangePushA(nvtxDomain, msg); };
+#define NVTX_POP() { nvtxDomainRangePop(nvtxDomain); };
+#else
+#define NVTX_PUSH(msg) { };
+#define NVTX_POP() { };
+#endif
+
 #ifndef _WIN32
 // Time measurement
 #include <sys/time.h>
@@ -86,6 +96,10 @@ int main(int argc, char* argv[])
 	double total_exec_time=0;
 	double idle_time;
 
+#ifdef USE_NVTX
+	nvtxDomain = nvtxDomainCreateA("AutoDock");
+#endif
+
 	// File list setup if -filelist option is on
 	FileList filelist;
 	int n_files;
@@ -119,7 +133,9 @@ int main(int argc, char* argv[])
 	// Print version info
 	printf("\nAutoDock-GPU version: %s\n", VERSION);
 
+	NVTX_PUSH("setup_gpu_for_docking");
 	setup_gpu_for_docking(cData,tData);
+	NVTX_POP();
 
 #ifdef USE_PIPELINE
 	#pragma omp parallel
@@ -147,9 +163,11 @@ int main(int argc, char* argv[])
 		#pragma omp for schedule(dynamic,1)
 #endif
 		for(int i_job=0; i_job<n_files; i_job++){
+			NVTX_PUSH("job");
 			// Setup the next file in the queue
 			printf ("\n(Thread %d is setting up Job %d)",t_id,i_job); fflush(stdout);
 			start_timer(setup_timer);
+			NVTX_PUSH("setup");
 			// Load files, read inputs, prepare arrays for docking stage
 			if (setup(all_maps,mygrid, floatgrids, mypars, myligand_init, myxrayligand, filelist, tData.pMem_fgrids, i_job, argc, argv) != 0) {
 				// If error encountered: Set error flag to 1; Add to count of finished jobs
@@ -167,6 +185,7 @@ int main(int argc, char* argv[])
 #endif
 				total_setup_time+=seconds_since(setup_timer);
 			}
+			NVTX_POP();
 
 			printf("\nRunning Job #%d: ", i_job);
 			if (filelist.used){
@@ -181,6 +200,7 @@ int main(int argc, char* argv[])
 			#pragma omp critical
 #endif
 			{
+				NVTX_PUSH("Docking");
 				// End idling timer, start exec timer
 				sim_state.idle_time = seconds_since(idle_timer);
 	                        start_timer(exec_timer);
@@ -189,6 +209,7 @@ int main(int argc, char* argv[])
 				// End exec timer, start idling timer
 				sim_state.exec_time = seconds_since(exec_timer);
 				start_timer(idle_timer);
+				NVTX_POP();
 			}
 
 			if (error_in_docking!=0){
@@ -214,15 +235,20 @@ int main(int argc, char* argv[])
 			// Post-processing
 	                printf ("\n(Thread %d is processing Job %d)",t_id,i_job); fflush(stdout);
 	                start_timer(processing_timer);
+					NVTX_PUSH("post-processing");
 	                process_result(&(mygrid), floatgrids.data(), &(mypars), &(myligand_init), &(myxrayligand), &argc,argv, sim_state);
 #ifdef USE_PIPELINE
 	                #pragma omp atomic update
 #endif
+					NVTX_POP();
 	                total_processing_time+=seconds_since(processing_timer);
+			NVTX_POP();
 		} // end of for loop
 	} // end of parallel section
 
+	NVTX_PUSH("finish_gpu_from_docking");
 	finish_gpu_from_docking(cData,tData);
+	NVTX_POP();
 
 #ifndef _WIN32
 	// Total time measurement
