@@ -82,6 +82,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "performdocking.h"
 #include "correct_grad_axisangle.h"
 #include "GpuData.h"
+#include "nvtx.h"
 
 
 // CUDA kernels
@@ -357,6 +358,8 @@ filled with clock() */
 
 	clock_t clock_start_docking;
 	clock_t	clock_stop_docking;
+	NVTX_PUSH("docking_with_gpu");
+	NVTX_PUSH("docking:prep")
 
 	//setting number of blocks and threads
 	threadsPerBlock = NUM_OF_THREADS_PER_BLOCK;
@@ -606,7 +609,9 @@ filled with clock() */
 	printf("dockpars.rotbondlist_length:%u\n", dockpars.rotbondlist_length);
 	*/
 
+	NVTX_POP();
 	clock_start_docking = clock();
+	NVTX_PUSH("docking:run");
 
 	//print progress bar
 	AutoStop autostop(mypars->pop_size, mypars->num_of_runs, mypars->stopstd);
@@ -937,7 +942,9 @@ filled with clock() */
         profile.nev_at_stop = total_evals/mypars->num_of_runs;
         profile.autostopped = autostop.did_stop();
 
+	NVTX_POP();
 	clock_stop_docking = clock();
+	NVTX_PUSH("docking:post");
 	if (mypars->autostop==0)
 	{
 		//update progress bar (bar length is 50)mem_num_of_rotatingatoms_per_rotbond_const
@@ -982,6 +989,8 @@ filled with clock() */
 
     auto const t4 = std::chrono::steady_clock::now();
     printf("\nShutdown time %fs\n", elapsed_seconds(t3, t4));
+	NVTX_POP();
+	NVTX_POP();
 	return 0;
 }
 

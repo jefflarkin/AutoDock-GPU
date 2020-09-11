@@ -56,6 +56,7 @@ endif
 
 ifeq ($(NVTX),ON)
 	NVTXFLAG=-DUSE_NVTX
+	LFLAGS+=-ldl
 endif
 
 

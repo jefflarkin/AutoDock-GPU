@@ -42,16 +42,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "profile.hpp"
 #include "simulation_state.hpp"
 #include "GpuData.h"
-
-#ifdef USE_NVTX
-#include <nvtx3/nvToolsExt.h>
-nvtxDomainHandle_t nvtxDomain;
-#define NVTX_PUSH(msg) { nvtxDomainRangePushA(nvtxDomain, msg); };
-#define NVTX_POP() { nvtxDomainRangePop(nvtxDomain); };
-#else
-#define NVTX_PUSH(msg) { };
-#define NVTX_POP() { };
-#endif
+#include "nvtx.h"
 
 #ifndef _WIN32
 // Time measurement
@@ -95,10 +86,6 @@ int main(int argc, char* argv[])
 	double total_processing_time=0;
 	double total_exec_time=0;
 	double idle_time;
-
-#ifdef USE_NVTX
-	nvtxDomain = nvtxDomainCreateA("AutoDock");
-#endif
 
 	// File list setup if -filelist option is on
 	FileList filelist;
@@ -163,7 +150,7 @@ int main(int argc, char* argv[])
 		#pragma omp for schedule(dynamic,1)
 #endif
 		for(int i_job=0; i_job<n_files; i_job++){
-			NVTX_PUSH("job");
+			NVTX_PUSH_RGBA("job",i_job%nvtxColorCnt);
 			// Setup the next file in the queue
 			printf ("\n(Thread %d is setting up Job %d)",t_id,i_job); fflush(stdout);
 			start_timer(setup_timer);
@@ -240,8 +227,8 @@ int main(int argc, char* argv[])
 #ifdef USE_PIPELINE
 	                #pragma omp atomic update
 #endif
-					NVTX_POP();
 	                total_processing_time+=seconds_since(processing_timer);
+			NVTX_POP();
 			NVTX_POP();
 		} // end of for loop
 	} // end of parallel section
