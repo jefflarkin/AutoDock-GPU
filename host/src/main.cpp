@@ -125,7 +125,7 @@ int main(int argc, char* argv[])
 	NVTX_POP();
 
 #ifdef USE_PIPELINE
-	#pragma omp parallel
+	#pragma omp parallel copyin(nvtxCurrentColor)
 	{
 		int t_id = omp_get_thread_num();
 		#pragma omp master
@@ -150,11 +150,15 @@ int main(int argc, char* argv[])
 		#pragma omp for schedule(dynamic,1)
 #endif
 		for(int i_job=0; i_job<n_files; i_job++){
-			NVTX_PUSH_RGBA("job",i_job%nvtxColorCnt);
+#ifdef USE_NVTX
+                        nvtxCurrentColor = i_job;
+                printf("Color: %lx = %d \n", &nvtxCurrentColor, nvtxCurrentColor);
+#endif
+			NVTX_PUSH_RGBA("job",i_job);
 			// Setup the next file in the queue
 			printf ("\n(Thread %d is setting up Job %d)",t_id,i_job); fflush(stdout);
 			start_timer(setup_timer);
-			NVTX_PUSH("setup");
+			NVTX_PUSH_RGBA("setup", nvtxCurrentColor);
 			// Load files, read inputs, prepare arrays for docking stage
 			if (setup(all_maps,mygrid, floatgrids, mypars, myligand_init, myxrayligand, filelist, tData.pMem_fgrids, i_job, argc, argv) != 0) {
 				// If error encountered: Set error flag to 1; Add to count of finished jobs
@@ -187,7 +191,7 @@ int main(int argc, char* argv[])
 			#pragma omp critical
 #endif
 			{
-				NVTX_PUSH("Docking");
+				NVTX_PUSH_RGBA("Docking", nvtxCurrentColor);
 				// End idling timer, start exec timer
 				sim_state.idle_time = seconds_since(idle_timer);
 	                        start_timer(exec_timer);
@@ -222,7 +226,7 @@ int main(int argc, char* argv[])
 			// Post-processing
 	                printf ("\n(Thread %d is processing Job %d)",t_id,i_job); fflush(stdout);
 	                start_timer(processing_timer);
-					NVTX_PUSH("post-processing");
+					NVTX_PUSH_RGBA("post-processing", nvtxCurrentColor);
 	                process_result(&(mygrid), floatgrids.data(), &(mypars), &(myligand_init), &(myxrayligand), &argc,argv, sim_state);
 #ifdef USE_PIPELINE
 	                #pragma omp atomic update

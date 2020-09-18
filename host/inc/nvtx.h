@@ -34,12 +34,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #define NVTX_PUSH(msg) { nvtxRangePushA(msg); }
 const static unsigned int nvtxColors[] = { 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF};
 const static int nvtxColorCnt = 6;
+static int nvtxCurrentColor;
+#pragma omp threadprivate(nvtxCurrentColor)
 #define NVTX_PUSH_RGBA(msg,colornum) { \
   nvtxEventAttributes_t eventAttrib = {0};\
     eventAttrib.version = NVTX_VERSION;\
     eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;\
     eventAttrib.colorType = NVTX_COLOR_ARGB;\
-    eventAttrib.color = nvtxColors[colornum];\
+    eventAttrib.color = nvtxColors[colornum%nvtxColorCnt];\
     eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII;\
     eventAttrib.message.ascii = msg;\
     nvtxRangePushEx(&eventAttrib);\

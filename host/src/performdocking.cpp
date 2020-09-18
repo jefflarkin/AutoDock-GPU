@@ -327,6 +327,7 @@ parameters argc and argv:
 		contains the state of the clock tick counter at the beginning of the program
 filled with clock() */
 {
+                printf("Inside Color: %lx = %d \n", &nvtxCurrentColor, nvtxCurrentColor);
     auto const t1 = std::chrono::steady_clock::now();
     cudaError_t status;
 
@@ -358,8 +359,8 @@ filled with clock() */
 
 	clock_t clock_start_docking;
 	clock_t	clock_stop_docking;
-	NVTX_PUSH("docking_with_gpu");
-	NVTX_PUSH("docking:prep")
+	NVTX_PUSH_RGBA("docking_with_gpu",nvtxCurrentColor);
+	NVTX_PUSH_RGBA("docking:prep",nvtxCurrentColor);
 
 	//setting number of blocks and threads
 	threadsPerBlock = NUM_OF_THREADS_PER_BLOCK;
@@ -611,7 +612,7 @@ filled with clock() */
 
 	NVTX_POP();
 	clock_start_docking = clock();
-	NVTX_PUSH("docking:run");
+	NVTX_PUSH_RGBA("docking:run", nvtxCurrentColor);
 
 	//print progress bar
 	AutoStop autostop(mypars->pop_size, mypars->num_of_runs, mypars->stopstd);
@@ -944,7 +945,7 @@ filled with clock() */
 
 	NVTX_POP();
 	clock_stop_docking = clock();
-	NVTX_PUSH("docking:post");
+	NVTX_PUSH_RGBA("docking:post", nvtxCurrentColor);
 	if (mypars->autostop==0)
 	{
 		//update progress bar (bar length is 50)mem_num_of_rotatingatoms_per_rotbond_const
